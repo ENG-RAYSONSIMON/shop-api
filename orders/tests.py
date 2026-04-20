@@ -19,6 +19,12 @@ class OrderAPITests(APITestCase):
             email="someoneelse@example.com",
             password="StrongPass123",
         )
+        self.admin_user = User.objects.create_user(
+            username="admin",
+            email="admin@example.com",
+            password="StrongPass123",
+            is_staff=True,
+        )
         self.product = Product.objects.create(
             user=self.other_user,
             name="Headphones",
@@ -32,7 +38,7 @@ class OrderAPITests(APITestCase):
             quantity=2,
         )
 
-    def test_successful_order_creation(self):
+    def test_authenticated_user_can_create_order(self):
         self.client.force_authenticate(user=self.user)
 
         response = self.client.post(
@@ -107,7 +113,7 @@ class OrderAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("quantity", response.data)
 
-    def test_user_only_sees_their_own_orders(self):
+    def test_normal_user_only_sees_their_own_orders(self):
         Order.objects.create(user=self.other_user, product=self.product, quantity=1)
         self.client.force_authenticate(user=self.user)
 
@@ -117,7 +123,7 @@ class OrderAPITests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["id"], self.order.id)
 
-    def test_user_cannot_view_someone_elses_order(self):
+    def test_normal_user_cannot_retrieve_another_users_order(self):
         other_order = Order.objects.create(
             user=self.other_user,
             product=self.product,
@@ -128,3 +134,31 @@ class OrderAPITests(APITestCase):
         response = self.client.get(reverse("order-detail", args=[other_order.id]))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_admin_can_list_all_orders(self):
+        other_order = Order.objects.create(
+            user=self.other_user,
+            product=self.product,
+            quantity=1,
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+        response = self.client.get(reverse("order-list-create"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item["id"] for item in response.data}
+        self.assertIn(self.order.id, returned_ids)
+        self.assertIn(other_order.id, returned_ids)
+
+    def test_admin_can_retrieve_any_order(self):
+        other_order = Order.objects.create(
+            user=self.other_user,
+            product=self.product,
+            quantity=1,
+        )
+        self.client.force_authenticate(user=self.admin_user)
+
+        response = self.client.get(reverse("order-detail", args=[other_order.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], other_order.id)

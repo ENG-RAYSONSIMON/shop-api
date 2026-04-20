@@ -1,6 +1,7 @@
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+
 from products.models import Product
 from users.models import User
 
@@ -30,6 +31,12 @@ class ProductAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
+
+    def test_anyone_can_retrieve_product(self):
+        response = self.client.get(reverse("product-detail", args=[self.product.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], self.product.id)
 
     def test_authenticated_user_can_create_product(self):
         self.client.force_authenticate(user=self.owner)
@@ -63,7 +70,7 @@ class ProductAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_only_owner_can_update_product(self):
+    def test_non_owner_cannot_update_another_users_product(self):
         self.client.force_authenticate(user=self.other_user)
 
         response = self.client.patch(
@@ -74,13 +81,15 @@ class ProductAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_owner_can_update_their_own_product(self):
         self.client.force_authenticate(user=self.owner)
-        owner_response = self.client.patch(
+
+        response = self.client.patch(
             reverse("product-detail", args=[self.product.id]),
             {"price": "79.99"},
             format="json",
         )
 
-        self.assertEqual(owner_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.product.refresh_from_db()
         self.assertEqual(str(self.product.price), "79.99")
