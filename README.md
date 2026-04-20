@@ -1,18 +1,30 @@
 # DRF Shop API
 
-A simple shop API built with Django REST Framework and JWT authentication. It includes:
+A Django REST Framework shop API with JWT authentication, user-owned products, and stock-aware order creation.
 
-- User registration, login, token refresh, and profile
-- Product listing, creation, update, and delete
-- Order creation and per-user order history
+## Features
+
+- User registration, login, token refresh, and authenticated profile access
+- Custom user model with unique email addresses
+- Public product listing and product detail endpoints
+- Authenticated product creation with automatic product ownership
+- Owner-only product update and delete permissions
+- Order creation for authenticated users
+- Automatic order `total_price` calculation
+- Automatic product stock reduction when an order is created
+- Order validation for out-of-stock products, oversized quantities, and non-positive quantities
+- Order `status` tracking with a default value of `pending`
+- Per-user order history for normal users
+- Full order visibility for staff and superusers
 
 ## Tech Stack
 
 - Python 3.12
-- Django 6
-- Django REST Framework
-- Simple JWT
+- Django 6.0.4
+- Django REST Framework 3.17.1
+- Simple JWT 5.5.1
 - SQLite
+- `python-dotenv` for local environment loading
 
 ## Project Structure
 
@@ -24,6 +36,7 @@ shop_api/
 |-- orders/
 |-- manage.py
 |-- requirements.txt
+|-- README.md
 ```
 
 ## Setup
@@ -54,13 +67,15 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-The app now auto-loads `.env` from the project root, so you can keep local settings there instead of setting them manually in your shell.
-
 Example `.env` values:
 
-- `DJANGO_SECRET_KEY`
-- `DJANGO_DEBUG`
-- `DJANGO_ALLOWED_HOSTS`
+```env
+DJANGO_SECRET_KEY=change-me-before-production
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
+```
+
+The project loads `.env` automatically from the repository root.
 
 5. Apply migrations:
 
@@ -68,7 +83,7 @@ Example `.env` values:
 python manage.py migrate
 ```
 
-6. Start the server:
+6. Start the development server:
 
 ```bash
 python manage.py runserver
@@ -79,6 +94,60 @@ Base URL:
 ```text
 http://127.0.0.1:8000/
 ```
+
+## Authentication
+
+The API uses JWT bearer tokens via Simple JWT.
+
+- Access token lifetime: 30 minutes
+- Refresh token lifetime: 1 day
+- Auth header format: `Authorization: Bearer <access_token>`
+
+## API Overview
+
+### Users
+
+- `POST /api/users/register/`
+- `POST /api/users/login/`
+- `POST /api/users/token/refresh/`
+- `GET /api/users/profile/`
+
+### Products
+
+- `GET /api/products/`
+- `POST /api/products/`
+- `GET /api/products/<id>/`
+- `PATCH /api/products/<id>/`
+- `DELETE /api/products/<id>/`
+
+Behavior:
+
+- Anyone can list and retrieve products.
+- Only authenticated users can create products.
+- The authenticated user is saved automatically as the product owner.
+- Only the owner of a product can update or delete it.
+- The `user` field in product responses is read-only and returns the owner username.
+
+### Orders
+
+- `GET /api/orders/`
+- `POST /api/orders/`
+- `GET /api/orders/<id>/`
+
+Behavior:
+
+- Only authenticated users can create and view orders.
+- Normal users can only list and retrieve their own orders.
+- Staff and superusers can list and retrieve all orders.
+- `total_price` is calculated automatically from `product.price * quantity`.
+- `status` is read-only in the API and defaults to `pending`.
+- Product stock is reduced automatically when an order is created.
+
+Validation:
+
+- Quantity must be greater than `0`.
+- Orders are rejected if the product is out of stock.
+- Orders are rejected if the requested quantity is greater than available stock.
 
 ## Step-By-Step API Testing
 
@@ -94,6 +163,16 @@ curl -X POST http://127.0.0.1:8000/api/users/register/ ^
 
 Expected result: `201 Created`
 
+Example response:
+
+```json
+{
+  "id": 1,
+  "username": "alice",
+  "email": "alice@example.com"
+}
+```
+
 ### 2. Log in and get JWT tokens
 
 ```bash
@@ -103,8 +182,6 @@ curl -X POST http://127.0.0.1:8000/api/users/login/ ^
 ```
 
 Expected result: JSON with `access` and `refresh`.
-
-Copy the `access` token and use it below.
 
 ### 3. View the logged-in user profile
 
@@ -124,7 +201,21 @@ curl -X POST http://127.0.0.1:8000/api/products/ ^
   -d "{\"name\":\"Keyboard\",\"description\":\"Mechanical keyboard\",\"price\":\"89.99\",\"stock\":10}"
 ```
 
-Expected result: `201 Created` with the new product.
+Expected result: `201 Created`
+
+Example response:
+
+```json
+{
+  "id": 1,
+  "user": "alice",
+  "name": "Keyboard",
+  "description": "Mechanical keyboard",
+  "price": "89.99",
+  "stock": 10,
+  "created_at": "2026-04-20T08:00:00Z"
+}
+```
 
 ### 5. List products
 
@@ -132,7 +223,7 @@ Expected result: `201 Created` with the new product.
 curl http://127.0.0.1:8000/api/products/
 ```
 
-Expected result: a list of products. This endpoint is public.
+Expected result: a public list of products ordered by newest first.
 
 ### 6. Update your product
 
@@ -147,6 +238,8 @@ curl -X PATCH http://127.0.0.1:8000/api/products/1/ ^
 
 Expected result: updated product data.
 
+If a different authenticated user tries to update this product, the API returns `403 Forbidden`.
+
 ### 7. Create an order
 
 Replace `1` with the product ID you want to order.
@@ -158,7 +251,27 @@ curl -X POST http://127.0.0.1:8000/api/orders/ ^
   -d "{\"product\":1,\"quantity\":2}"
 ```
 
-Expected result: `total_price` is calculated automatically.
+Expected result: `201 Created`
+
+Example response:
+
+```json
+{
+  "id": 1,
+  "user": "alice",
+  "product": 1,
+  "quantity": 2,
+  "status": "pending",
+  "total_price": "159.98",
+  "ordered_at": "2026-04-20T08:05:00Z"
+}
+```
+
+Notes:
+
+- `status` is assigned automatically.
+- `total_price` is calculated automatically.
+- The product's stock is reduced after the order is created.
 
 ### 8. List your orders
 
@@ -167,7 +280,10 @@ curl http://127.0.0.1:8000/api/orders/ ^
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
-Expected result: only your own orders.
+Expected result:
+
+- Normal users see only their own orders.
+- Staff users see all orders.
 
 ### 9. View one order
 
@@ -178,7 +294,11 @@ curl http://127.0.0.1:8000/api/orders/1/ ^
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
-Expected result: your selected order if it belongs to you.
+Expected result:
+
+- Normal users can retrieve only their own orders.
+- Staff users can retrieve any order.
+- A normal user trying to access someone else's order gets `404 Not Found`.
 
 ### 10. Refresh an access token
 
@@ -190,43 +310,73 @@ curl -X POST http://127.0.0.1:8000/api/users/token/refresh/ ^
 
 Expected result: a new access token.
 
-## Endpoint Summary
+## Common Error Cases
 
-### Users
+### Unauthenticated product creation
 
-- `POST /api/users/register/`
-- `POST /api/users/login/`
-- `POST /api/users/token/refresh/`
-- `GET /api/users/profile/`
+`POST /api/products/` without a bearer token returns `401 Unauthorized`.
 
-### Products
+### Out-of-stock order
 
-- `GET /api/products/`
-- `POST /api/products/`
-- `GET /api/products/<id>/`
-- `PATCH /api/products/<id>/`
-- `DELETE /api/products/<id>/`
+If the selected product has `stock = 0`, the API returns `400 Bad Request`.
 
-### Orders
+Example response:
 
-- `GET /api/orders/`
-- `POST /api/orders/`
-- `GET /api/orders/<id>/`
+```json
+{
+  "product": "This product is out of stock."
+}
+```
+
+### Quantity greater than available stock
+
+If requested quantity exceeds stock, the API returns `400 Bad Request`.
+
+Example response:
+
+```json
+{
+  "quantity": "Only 5 item(s) available in stock."
+}
+```
+
+### Zero or negative quantity
+
+If quantity is `0` or less, the API returns `400 Bad Request`.
+
+Example response:
+
+```json
+{
+  "quantity": [
+    "Quantity must be greater than 0."
+  ]
+}
+```
 
 ## Automated Tests
 
-Run the test suite with:
+Run the full test suite with:
 
 ```bash
 python manage.py test
 ```
 
-The test suite covers:
+The current test suite covers:
 
-- user registration, login, and profile access
-- product permissions and CRUD-related behavior
-- order creation and ownership filtering
+- user registration, login, and profile protection
+- public product listing and retrieval
+- authenticated product creation
+- owner-only product updates
+- order creation with automatic status and total price
+- stock reduction after ordering
+- order validation for stock and quantity rules
+- user-only order visibility
+- admin access to all orders
 
 ## Notes
-- For production, set `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, and a real `DJANGO_ALLOWED_HOSTS` value.
-- If `.env` does not exist, Django falls back to safe local defaults in `config/settings.py`.
+
+- The project includes Django's browsable API login routes at `GET /api-auth/`.
+- The default database is SQLite at `db.sqlite3`.
+- If `.env` is missing, Django falls back to safe local defaults from [config/settings.py](/c:/Users/dell/Desktop/Learn/drf_shop_api/config/settings.py).
+- For production, set a real `DJANGO_SECRET_KEY`, set `DJANGO_DEBUG=False`, and configure `DJANGO_ALLOWED_HOSTS` properly.
