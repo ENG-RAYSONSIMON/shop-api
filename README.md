@@ -24,12 +24,16 @@ A Django REST Framework shop API with JWT authentication, user-owned products, c
 - Django REST Framework 3.17.1
 - Simple JWT 5.5.1
 - SQLite
+- Docker / Docker Compose
 - `python-dotenv` for local environment loading
 
 ## Project Structure
 
 ```text
 shop_api/
+|-- Dockerfile
+|-- docker-compose.yml
+|-- docker-entrypoint.sh
 |-- config/
 |-- users/
 |-- products/
@@ -39,7 +43,78 @@ shop_api/
 |-- README.md
 ```
 
-## Setup
+## Run With Docker
+
+1. Clone the repository:
+
+```bash
+git clone <your-repo-url>
+cd shop_api
+```
+
+2. Build and start the API:
+
+```bash
+docker compose up --build
+```
+
+The container runs migrations automatically on startup, then starts Django on:
+
+```text
+http://127.0.0.1:8000/
+```
+
+SQLite data is stored in the Compose volume `shop-api_sqlite_data`.
+
+3. Stop the API:
+
+```bash
+docker compose down
+```
+
+4. Stop the API and remove the SQLite volume:
+
+```bash
+docker compose down -v
+```
+
+## Docker Commands
+
+Run management commands inside the container:
+
+```bash
+docker compose run --rm api python manage.py createsuperuser
+docker compose run --rm api python manage.py test
+docker compose run --rm api python manage.py shell
+```
+
+Build and run without Docker Compose:
+
+```bash
+docker build -t shop-api .
+docker run --rm -p 8000:8000 \
+  -e DJANGO_SECRET_KEY=change-me-before-production \
+  -e DJANGO_DEBUG=True \
+  -e DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,0.0.0.0 \
+  -e DJANGO_SQLITE_PATH=/app/data/db.sqlite3 \
+  -v shop_api_sqlite_data:/app/data \
+  shop-api
+```
+
+## Environment Variables
+
+The API reads these optional environment variables:
+
+```env
+DJANGO_SECRET_KEY=change-me-before-production
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,0.0.0.0
+DJANGO_SQLITE_PATH=/app/data/db.sqlite3
+```
+
+For local non-Docker runs, `DJANGO_SQLITE_PATH` defaults to `db.sqlite3`.
+
+## Local Setup Without Docker
 
 1. Clone the repository:
 

@@ -1,0 +1,14 @@
+.git
+.env
+.venv
+venv
+__pycache__
+*.pyc
+db.sqlite3
+*.sqlite3
+.pytest_cache
+.mypy_cache
+dist
+build
+.DS_Store
+Thumbs.db

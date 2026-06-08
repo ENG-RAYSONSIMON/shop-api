@@ -1,0 +1,15 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SECRET_KEY: Joh-is-my-beautiful-daugher
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: 127.0.0.1,localhost,0.0.0.0
+      DJANGO_SQLITE_PATH: /app/data/db.sqlite3
+    volumes:
+      - sqlite_data:/app/data
+
+volumes:
+  sqlite_data:
